@@ -1,140 +1,142 @@
 import wixData from 'wix-data';
 
-let expenseRows = [
-  {
-    _id: String(Date.now()) + Math.floor(Math.random() * 10000),
-    description: "",
-    date: null,
-    amount: "",
-    category: "",
-    paymentMethod: "",
-    reference: "",
-    fileType: "",
-    receipt: null
-  }
-];
+// Start empty
+let expenseRows = [];
 
-function updateRow(id, changes) {
-  const idx = expenseRows.findIndex(row => row._id === id);
-  if (idx !== -1) {
-    expenseRows[idx] = { ...expenseRows[idx], ...changes };
-    console.log(`[updateRow] Updated row ${id}:`, expenseRows[idx]);
-  }
-}
+async function getNextExpenseNumber() {
+    const result = await wixData.query("Expenses")
+        .descending("_createdDate")
+        .limit(1)
+        .find();
 
-function syncRepeaterInputsToRows() {
-  let rows = [];
-  $w("#expenseRepeater").forEachItem(($item, itemData, i) => {
-    rows.push({
-      _id: itemData._id,
-      description: $item("#descInput").value,
-      date: $item("#dateInput").value,
-      amount: $item("#amtInput").value,
-      category: $item("#catDropdown").value,
-      paymentMethod: $item("#payDropdown").value,
-      reference: $item("#refNumberInput").value,
-      fileType: $item("#dropdown1").value,
-      receipt: itemData.receipt || null
-    });
-  });
-  expenseRows = rows;
-  console.log("[syncRepeaterInputsToRows] All rows after sync:", expenseRows);
-}
-
-$w.onReady(() => {
-  console.log("=== onReady. Initial expenseRows:", JSON.stringify(expenseRows));
-  $w("#expenseRepeater").data = [...expenseRows];
-
-  $w("#expenseRepeater").onItemReady(($item, itemData, idx) => {
-    const rowId = itemData._id;
-    $item("#descInput").value = itemData.description || "";
-    $item("#dateInput").value = itemData.date || null;
-    $item("#amtInput").value = itemData.amount || "";
-    $item("#catDropdown").value = itemData.category || "";
-    $item("#payDropdown").value = itemData.paymentMethod || "";
-    $item("#refNumberInput").value = itemData.reference || "";
-    $item("#dropdown1").value = itemData.fileType || "";
-
-    // Input handlers (just updateRow, NOT sync)
-    $item("#descInput").onInput(e => {
-      updateRow(rowId, { description: e.target.value });
-    });
-    $item("#dateInput").onChange(e => {
-      updateRow(rowId, { date: e.target.value });
-    });
-    $item("#amtInput").onInput(e => {
-      updateRow(rowId, { amount: e.target.value });
-    });
-    $item("#catDropdown").onChange(e => {
-      updateRow(rowId, { category: e.target.value });
-    });
-    $item("#payDropdown").onChange(e => {
-      updateRow(rowId, { paymentMethod: e.target.value });
-    });
-    $item("#refNumberInput").onInput(e => {
-      updateRow(rowId, { reference: e.target.value });
-    });
-    $item("#dropdown1").onChange(e => {
-      updateRow(rowId, { fileType: e.target.value });
-    });
-
-    // Upload Button Handler
-    $item("#receiptUploadBtn").onChange(async () => {
-      if ($item("#receiptUploadBtn").value.length > 0) {
-        $item("#receiptUploadBtn").uploadFiles()
-          .then(uploadedFiles => {
-            if (uploadedFiles.length > 0 && uploadedFiles[0].fileUrl) {
-              updateRow(rowId, { receipt: uploadedFiles[0].fileUrl });
-              console.log(`[uploadBtn] File uploaded for row ${rowId}:`, uploadedFiles[0].fileUrl);
-            } else {
-              updateRow(rowId, { receipt: null });
-              console.warn(`[uploadBtn] File upload failed for row ${rowId}`, uploadedFiles);
-            }
-          })
-          .catch(err => {
-            updateRow(rowId, { receipt: null });
-            console.error(`[uploadBtn] Error uploading for row ${rowId}:`, err);
-          });
-      }
-    });
-
-    // Delete button
-    if (idx === 0) {
-      $item("#deleteRowBtn").hide();
-      console.log(`[deleteRowBtn] HIDDEN for FIRST row (id=${rowId})`);
-    } else {
-      $item("#deleteRowBtn").show();
-      console.log(`[deleteRowBtn] SHOWING for row idx=${idx}, id=${rowId}`);
-      $item("#deleteRowBtn").onClick(() => {
-        syncRepeaterInputsToRows(); // 🔥 sync UI before removing!
-        expenseRows = expenseRows.filter(row => row._id !== rowId);
-        console.log(`[deleteRowBtn] Deleted row ${rowId}. Now rows:`, expenseRows.map(x=>x._id));
-        $w("#expenseRepeater").data = [...expenseRows];
-      });
+    let lastNumber = 0;
+    if (result.items.length > 0) {
+        const lastExpense = result.items[0];
+        const parts = (lastExpense.expenseNumber || '').split('-');
+        lastNumber = parseInt(parts[2]) || 0;
     }
-  });
+    return `EXP-2025-${(lastNumber + 1).toString().padStart(4, '0')}`;
+}
 
-  $w("#addExpenseRowBtn").onClick(() => {
-    syncRepeaterInputsToRows(); // 🔑
-    const newRow = {
-      _id: String(Date.now()) + Math.floor(Math.random() * 10000),
-      description: "",
-      date: null,
-      amount: "",
-      category: "",
-      paymentMethod: "",
-      reference: "",
-      fileType: "",
-      receipt: null
-    };
-    expenseRows.push(newRow);
-    console.log("[addExpenseRowBtn] Added row:", newRow, "| Rows:", expenseRows.map(x=>x._id));
-    $w("#expenseRepeater").data = [...expenseRows];
-  });
+$w.onReady(function () {
+    $w("#container1").collapse();
+    $w("#expenseRepeater").data = [];
 
-  $w("#saveAllExpensesButton").onClick(() => {
-    syncRepeaterInputsToRows();
-    console.log("[saveAllExpensesButton] SUBMIT, all rows:", JSON.stringify(expenseRows));
-    $w("#statusText").text = "✅ All rows logged in console.";
-  });
+    $w("#expenseRepeater").onItemReady(($item, itemData, index) => {
+        $item("#descInput").value = itemData.description || "";
+        $item("#dateInput").value = itemData.date || null;
+        $item("#amtInput").value = itemData.amount || "";
+        $item("#catDropdown").value = itemData.category || "";
+        $item("#payDropdown").value = itemData.paymentMethod || "";
+        $item("#refNumberInput").value = itemData.reference || "";
+        $item("#fileTypeDropdown").value = itemData.fileType || "Image";
+
+        // Set upload file type initially
+        setUploadBtnFileType($item, $item("#fileTypeDropdown").value);
+
+        $item("#fileTypeDropdown").onChange(e => {
+            expenseRows[index].fileType = e.target.value;
+            setUploadBtnFileType($item, e.target.value);
+        });
+
+        // Input handlers
+        $item("#descInput").onInput(e => { expenseRows[index].description = e.target.value; });
+        $item("#dateInput").onChange(e => { expenseRows[index].date = e.target.value; });
+        $item("#amtInput").onInput(e => { expenseRows[index].amount = e.target.value; });
+        $item("#catDropdown").onChange(e => { expenseRows[index].category = e.target.value; });
+        $item("#payDropdown").onChange(e => { expenseRows[index].paymentMethod = e.target.value; });
+        $item("#refNumberInput").onInput(e => { expenseRows[index].reference = e.target.value; });
+
+        // Upload handler
+        $item("#receiptUploadBtn").onChange(() => {
+            const fileTypeSelected = $item("#fileTypeDropdown").value;
+            $item("#receiptUploadBtn").uploadFiles()
+                .then(files => {
+                    if (files.length > 0) {
+                        if (fileTypeSelected === "Image") {
+                            expenseRows[index].receiptImage = files[0].fileUrl;
+                            expenseRows[index].receiptDocument = null;
+                        } else if (fileTypeSelected === "Document") {
+                            expenseRows[index].receiptImage = null;
+                            expenseRows[index].receiptDocument = files[0].fileUrl;
+                        }
+                    }
+                });
+        });
+
+        // Remove row button logic
+        if (expenseRows.length === 1) $item("#deleteRowBtn").hide();
+        else {
+            $item("#deleteRowBtn").show();
+            $item("#deleteRowBtn").onClick(() => {
+                expenseRows.splice(index, 1);
+                $w("#expenseRepeater").data = [...expenseRows];
+                if (expenseRows.length === 0) {
+                    $w("#container1").collapse();
+                }
+            });
+        }
+    });
+
+    // Add row
+    $w("#addExpenseRowBtn").onClick(() => {
+        expenseRows.push({
+            _id: String(Date.now()) + Math.floor(Math.random() * 10000),
+            reference: '',
+            description: '',
+            amount: '',
+            category: '',
+            paymentMethod: '',
+            date: null,
+            fileType: 'Image',
+            receiptImage: null,
+            receiptDocument: null
+        });
+        $w("#expenseRepeater").data = [...expenseRows];
+        $w("#container1").expand();
+    });
+
+    // Submit/save logic unchanged, just include both fields in the insert
+    $w("#saveAllExpensesButton").onClick(async () => {
+        let failedRows = 0;
+        for (let i = 0; i < expenseRows.length; i++) {
+            const row = expenseRows[i];
+            if (!row.description || !row.amount || !row.category || !row.paymentMethod || !row.date) {
+                failedRows++;
+                continue;
+            }
+            try {
+                const expenseNumber = await getNextExpenseNumber();
+                await wixData.insert("Expenses", {
+                    expenseNumber,
+                    reference: row.reference,
+                    description: row.description,
+                    amount: Number(row.amount),
+                    category: row.category,
+                    paymentMethod: row.paymentMethod,
+                    date: row.date ? new Date(row.date) : null,
+                    fileType: row.fileType || "Image",
+                    receiptImage: row.receiptImage || null,
+                    receiptDocument: row.receiptDocument || null
+                });
+            } catch (e) {
+                failedRows++;
+            }
+        }
+        if (failedRows === 0) {
+            $w("#statusText").text = "✅ All expenses saved!";
+            expenseRows = [];
+            $w("#expenseRepeater").data = [];
+            $w("#container1").collapse();
+        } else {
+            $w("#statusText").text = `❌ ${failedRows} entry(s) failed. Please check for missing fields.`;
+        }
+        setTimeout(() => $w("#statusText").text = "", 2500);
+    });
 });
+
+// ---- Helper ----
+function setUploadBtnFileType($item, type) {
+    $item("#receiptUploadBtn").fileType = type; // Must be "Image" or "Document"
+    console.log("[fileType] Set to:", type);
+}
